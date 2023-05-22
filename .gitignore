@@ -2,3 +2,7 @@
 *.pdf
 .venv
 .vscode
+slic_outputs
+input_bmp_ims
+gabor_output
+colored_spx_ims
