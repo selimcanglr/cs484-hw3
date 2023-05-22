@@ -6,6 +6,7 @@ import os
 import subprocess
 import cv2
 from sklearn.cluster import KMeans
+import random
 
 IM_PATHS = ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg",
             "6.jpg", "7.jpg", "8.jpg", "9.jpg", "10.jpg"]
@@ -73,7 +74,7 @@ def run_slic(slic_exec_path, filename, spatial_proximity_weight, number_of_super
     subprocess.run(command)
 
 
-def read_labels() -> np.ndarray:
+def read_labels(im_shapes) -> np.ndarray:
     print("\n\nReading labels...")
 
     labels_lst = []
@@ -82,8 +83,8 @@ def read_labels() -> np.ndarray:
         with open(filename, "rb") as f:
             data = f.read()
 
-        width = IM_WIDTH
-        height = IM_HEIGHT
+        height = im_shapes[i-1][0]
+        width = im_shapes[i-1][1]
 
         sz = width * height
         vals = np.frombuffer(data, dtype=np.int32, count=sz)
@@ -138,6 +139,8 @@ def generate_pseudo_colors_for_clusters(k: int):
         Returns:
             colors: An array of length 'k', with each index corresponding to a particular unique color.
     '''
+    print(
+        f"Generating {k} many unique random colors for each superpixel cluster.")
     colors = []
     while len(colors) < k:
         # Generate a random RGB color
@@ -161,16 +164,16 @@ def color_images(colors, ims, spx_labels, spx_cluster_labels):
     if not os.path.exists(COLORED_IM_OUT_PATH):
         os.mkdir(COLORED_IM_OUT_PATH)
 
-    for i, im in enumerate(ims):
-        height, width = im.shape
-        for y in height:
-            for x in width:
-                spx_id = spx_labels[y, x]
+    for i, (im, spx_label) in enumerate(zip(ims, spx_labels)):
+        height, width, _ = im.shape
+        for y in range(height):
+            for x in range(width):
+                spx_id = spx_label[y, x]
                 cluster_label = spx_cluster_labels[i, spx_id]
                 color = colors[cluster_label]
                 im[y, x] = color
 
-        cv2.imwrite(COLORED_IM_OUT_PATH, im)
+        cv2.imwrite(COLORED_IM_OUT_PATH + str(i + 1) + ".jpg", im)
 
 
 def main():
@@ -190,8 +193,8 @@ def main():
     # Assuming gabor filter is run on the original images,  compute Gabor features
     # for all superpixels by simply computing the average of Gabor features of the
     # pixels inside a particular superpixel.
-    labels_lst = read_labels()
-
+    im_shapes = [(im.shape[0], im.shape[1]) for im in jpg_ims]
+    labels_lst = read_labels(im_shapes)
     gabor_filters_lst = read_all_gabor_filters()
 
     # Compute Gabor features for all superpixels for all images
@@ -226,21 +229,22 @@ def main():
     kmeans.fit(reshaped_row_adjusted_gabor_feat_mat_lst)
 
     cluster_labels = kmeans.labels_
-    spx_labels = cluster_labels.reshape(
+    spx_cluster_labels = cluster_labels.reshape(
         (row_adjusted_gabor_feat_mat_lst.shape[0], row_adjusted_gabor_feat_mat_lst.shape[1]))
     centers = kmeans.cluster_centers_
     print("\n=====Superpixel Labels=====")
-    print(spx_labels)
-    print(f"Superpixel Labels shape: {spx_labels.shape}")
+    print(spx_cluster_labels)
+    print(f"Superpixel Labels shape: {spx_cluster_labels.shape}")
     print("\n=====Cluster centers=====")
     print(centers)
     print(f"Centers shape: {centers.shape}")
 
     colors = generate_pseudo_colors_for_clusters(k)
+    print("Colors:")
     print(colors)
 
     # Color superpixels in images
-    color_images(colors, jpg_ims, labels)
+    color_images(colors, jpg_ims, labels_lst, spx_cluster_labels)
 
 
 main()
